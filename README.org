@@ -1,0 +1,461 @@
+#+TITLE: Aider MCP Server
+#+AUTHOR: Ricardo Amaro
+#+DATE: 2025
+#+STARTUP: overview
+#+OPTIONS: toc:2 num:nil
+
+
+A Model Context Protocol (MCP) server that provides seamless integration with [[https://aider.chat/][Aider]], the AI pair programming tool. This server enables LLMs to interact with Aider through natural language commands, making it easy to perform code reviews, refactoring, debugging, and architectural discussions.
+
+* Table of Contents
+:PROPERTIES:
+:TOC:      :include all :depth 2
+:END:
+:CONTENTS:
+- [[#aider-mcp-server][Aider MCP Server]]
+  - [[#architecture-overview][Architecture Overview]]
+    - [[#core-components][Core Components]]
+  - [[#prerequisites][Prerequisites]]
+  - [[#installation][Installation]]
+    - [[#option-1-direct-installation][Option 1: Direct Installation]]
+    - [[#option-2-development-installation][Option 2: Development Installation]]
+    - [[#verify-installation][Verify Installation]]
+  - [[#configuration][Configuration]]
+    - [[#environment-variables][Environment Variables]]
+    - [[#mcp-server-configuration][MCP Server Configuration]]
+    - [[#project-setup][Project Setup]]
+  - [[#usage-with-mcp-cli][Usage with mcp-cli]]
+    - [[#basic-setup][Basic Setup]]
+    - [[#workflow-examples][Workflow Examples]]
+    - [[#quick-start-workflows][Quick Start Workflows]]
+    - [[#available-tools][Available Tools]]
+    - [[#advanced-usage-patterns][Advanced Usage Patterns]]
+  - [[#contributing][Contributing]]
+    - [[#development-setup][Development Setup]]
+    - [[#running-tests][Running Tests]]
+    - [[#code-quality][Code Quality]]
+    - [[#contribution-guidelines][Contribution Guidelines]]
+    - [[#areas-for-contribution][Areas for Contribution]]
+    - [[#reporting-issues][Reporting Issues]]
+  - [[#license][License]]
+  - [[#related-projects][Related Projects]]
+:END:
+
+* Architecture Overview
+
+The Aider MCP Server is built with a modular architecture that separates concerns for maintainability and reliability:
+
+#+BEGIN_EXAMPLE
+┌─────────────────────────────────────────────────────────────┐
+│                    MCP Client (e.g., mcp-cli)               │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ MCP Protocol
+┌─────────────────────▼───────────────────────────────────────┐
+│                 Aider MCP Server                            │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐  │
+│  │ Process Manager │  │Response Handler │  │ Tool Layer  │  │
+│  │                 │  │                 │  │             │  │
+│  │ • Lifecycle     │  │ • Output Filter │  │ • 13 Tools  │  │
+│  │ • Health Check  │  │ • Noise Removal │  │ • Validation│  │
+│  │ • Circuit Break │  │ • Prompt Detect │  │ • Error Hdl │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘  │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ Subprocess Communication
+┌─────────────────────▼───────────────────────────────────────┐
+│                    Aider Process                            │
+│                                                             │
+│  • Code Analysis    • File Management   • Git Integration   │
+│  • LLM Integration  • Test Execution    • Diff Generation   │
+└─────────────────────────────────────────────────────────────┘
+#+END_EXAMPLE
+
+** Core Components
+
+- *Process Manager*: Handles Aider subprocess lifecycle, health monitoring, and graceful shutdown
+- *Response Handler*: Filters Aider output, removes startup noise, and detects command prompts
+- *Tool Layer*: Provides 13 MCP tools for comprehensive Aider interaction
+- *Circuit Breaker*: Prevents cascading failures and ensures system stability
+
+* Prerequisites
+
+- *Python 3.11+*: Required for async/await syntax and modern type hints
+- *Aider*: Install via ~pip install aider-chat~ or ~pipx install aider-chat~
+- *Git Repository*: Aider works best in Git-initialized directories
+- *LLM API Access*: 
+  - OpenAI API key (~OPENAI_API_KEY~)
+  - Anthropic API key (~ANTHROPIC_API_KEY~) 
+  - Or local Ollama installation
+- *MCP Client*: Such as [[https://github.com/chrishayuk/mcp-cli][mcp-cli]] for interaction
+
+* Installation
+
+** Option 1: Direct Installation
+
+#+BEGIN_SRC bash
+# Clone the repository
+git clone https://github.com/ricardoamaro/aider-mcp-server.git
+cd aider-mcp-server
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install Aider if not already installed
+pip install aider-chat
+#+END_SRC
+
+** Option 2: Development Installation
+
+#+BEGIN_SRC bash
+# Clone and install in development mode
+git clone https://github.com/ricardoamaro/aider-mcp-server.git
+cd aider-mcp-server
+pip install -e .
+#+END_SRC
+
+** Verify Installation
+
+#+BEGIN_SRC bash
+# Test the server directly
+python aider_mcp_server.py
+
+# Check Aider installation
+aider --version
+#+END_SRC
+
+* Configuration
+
+** Environment Variables
+
+Set up your LLM provider credentials:
+
+#+BEGIN_SRC bash
+# OpenAI (recommended)
+export OPENAI_API_KEY="sk-your-openai-key-here"
+
+# Anthropic Claude
+export ANTHROPIC_API_KEY="sk-ant-your-anthropic-key-here"
+
+# Optional: Custom Aider settings
+export AIDER_MODEL="gpt-4o"  # Default model for Aider
+export AIDER_TIMEOUT="300"   # Tool execution timeout in seconds
+#+END_SRC
+
+** MCP Server Configuration
+
+Create a server configuration file for your MCP client:
+
+*server_config.json*:
+#+BEGIN_SRC json
+{
+  "mcpServers": {
+    "aider": {
+      "command": "python",
+      "args": ["path/to/aider-mcp-server/aider_mcp_server.py"],
+      "env": {
+        "OPENAI_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+#+END_SRC
+
+** Project Setup
+
+Initialize your coding project:
+
+#+BEGIN_SRC bash
+# Navigate to your project directory
+cd /path/to/your/project
+
+# Initialize Git (required for Aider)
+git init
+git add .
+git commit -m "Initial commit"
+
+# Create basic project structure
+mkdir src tests docs
+touch src/__init__.py tests/__init__.py
+#+END_SRC
+
+* 🔧 Usage with mcp-cli
+
+The Aider MCP Server integrates seamlessly with [[https://github.com/chrishayuk/mcp-cli][mcp-cli]] for powerful AI-assisted development workflows.
+
+** Basic Setup
+
+#+BEGIN_SRC bash
+# Install mcp-cli
+pip install mcp-cli
+
+# Quick start with a workflow (recommended for beginners)
+mcp-cli chat --server aider --provider openai --model gpt-4o
+> aider_quick_start(workflow="feature", target_files=["src/main.py"])
+
+# Or start a custom chat session
+mcp-cli chat --server aider --provider openai --model gpt-4o
+> aider_start(files=["src/main.py"], message="Help me implement user authentication")
+#+END_SRC
+
+** Workflow Examples
+
+**** 1. Code Review and Refactoring
+
+#+BEGIN_SRC bash
+# Start Aider with specific files
+> aider_start(files=["src/main.py", "src/utils.py"], message="Review this code for potential improvements")
+
+# Request architectural analysis
+> aider_send_message("Analyze the current code structure and suggest refactoring opportunities for better maintainability")
+
+# Apply specific refactoring
+> aider_send_message("Extract the database logic into a separate service class with dependency injection")
+#+END_SRC
+
+**** 2. Feature Development
+
+#+BEGIN_SRC bash
+# Initialize new feature development
+> aider_start(files=["src/app.py"], message="I need to add user authentication to this Flask app")
+
+# Add related files as context
+> aider_add_files(["src/models.py", "src/config.py"])
+
+# Implement the feature
+> aider_send_message("Create a complete user authentication system with login, logout, and session management")
+
+# Run tests
+> aider_run_command("test")
+#+END_SRC
+
+**** 3. Bug Fixing
+
+#+BEGIN_SRC bash
+# Start debugging session
+> aider_start(message="Help me debug a performance issue in the user query system")
+
+# Add relevant files
+> aider_add_files(["src/database.py", "src/queries.py", "tests/test_performance.py"])
+
+# Analyze and fix
+> aider_send_message("The user queries are running slowly. Please analyze the code and optimize the database queries")
+
+# Verify the fix
+> aider_run_command("test -v")
+#+END_SRC
+
+**** 4. Documentation and Architecture
+
+#+BEGIN_SRC bash
+# Architectural discussion
+> aider_start(message="I want to discuss the overall architecture of this microservices project")
+
+# Add configuration files
+> aider_add_files(["docker-compose.yml", "src/services/", "docs/architecture.md"])
+
+# Get architectural guidance
+> aider_send_message("Review the current microservices architecture and suggest improvements for scalability and maintainability")
+#+END_SRC
+
+** 🚀 Quick Start Workflows
+
+The ~aider_quick_start~ tool provides predefined workflows for common development tasks:
+
+**** Available Workflows
+
+| Workflow | Purpose                                    | Auto-Configuration                 |
+|----------+--------------------------------------------+------------------------------------|
+| ~debug~    | Debug issues and analyze problems          | Auto-test enabled, linting enabled |
+| ~refactor~ | Improve code structure and maintainability | Architect mode, manual commits     |
+| ~feature~  | Implement new features                     | Auto-commits, auto-test enabled    |
+| ~test~     | Write comprehensive tests                  | Auto-test with pytest              |
+| ~review~   | Code quality and security review           | Architect mode for analysis        |
+
+**** Quick Start Examples
+
+#+BEGIN_SRC bash
+# Debug workflow - analyze code for issues
+> aider_quick_start(workflow="debug", target_files=["src/main.py", "src/utils.py"])
+
+# Feature development workflow
+> aider_quick_start(workflow="feature", target_files=["src/app.py"])
+
+# Code review workflow
+> aider_quick_start(workflow="review", target_files=["src/"])
+
+# Refactoring workflow
+> aider_quick_start(workflow="refactor", target_files=["src/legacy_code.py"])
+
+# Testing workflow
+> aider_quick_start(workflow="test", target_files=["src/user_service.py"])
+#+END_SRC
+
+Each workflow automatically:
+1. Starts Aider with the specified files
+2. Sets an appropriate initial message for the task
+3. Configures Aider settings optimized for that workflow type
+4. Returns status of the setup process
+
+This provides a streamlined way to begin common development tasks without manual configuration.
+
+** Available Tools
+
+The server provides 13 comprehensive tools:
+
+| Tool                  | Purpose                             | Example Usage                         |
+|-----------------------+-------------------------------------+---------------------------------------|
+| ~aider_start~           | Initialize Aider session            | Start with specific files and model   |
+| ~aider_send_message~    | Send natural language prompts       | Code requests, questions, discussions |
+| ~aider_add_files~       | Add files to context                | Include additional source files       |
+| ~aider_drop_files~      | Remove files from context           | Clean up context                      |
+| ~aider_run_command~     | Execute Aider commands              | Run tests, generate diffs, commit     |
+| ~aider_list_files~      | Show current file context           | Verify loaded files                   |
+| ~aider_configure~       | Configure Aider settings            | Adjust behavior during runtime        |
+| ~aider_quick_start~     | *NEW* Start with predefined workflows | Quick setup for common tasks          |
+| ~aider_get_status~      | Check process health                | Monitor system status                 |
+| ~aider_get_debug_info~  | Comprehensive diagnostics           | Troubleshoot issues                   |
+| ~aider_test_connection~ | Test responsiveness                 | Verify connectivity                   |
+| ~aider_set_log_level~   | Adjust logging verbosity            | Debug or quiet mode                   |
+| ~aider_emergency_stop~  | Force termination                   | Stop runaway processes                |
+| ~aider_stop~            | Graceful shutdown                   | End session cleanly                   |
+
+** Advanced Usage Patterns
+
+**** Multi-File Refactoring
+
+#+BEGIN_SRC bash
+# Load entire module
+> aider_add_files(["src/auth/", "tests/test_auth.py"])
+
+# Comprehensive refactoring
+> aider_send_message("Refactor the authentication module to use async/await patterns and add comprehensive error handling")
+
+# Review changes
+> aider_run_command("diff")
+
+# Commit if satisfied
+> aider_run_command("commit -m 'Refactor auth module for async support'")
+#+END_SRC
+
+**** Test-Driven Development
+
+#+BEGIN_SRC bash
+# Start with test files
+> aider_start(files=["tests/test_user_service.py"])
+
+# Write failing tests first
+> aider_send_message("Create comprehensive tests for a UserService class that handles CRUD operations")
+
+# Add implementation file
+> aider_add_files(["src/user_service.py"])
+
+# Implement to pass tests
+> aider_send_message("Implement the UserService class to make all tests pass")
+
+# Verify
+> aider_run_command("test -v")
+#+END_SRC
+
+**** Code Quality and Standards
+
+#+BEGIN_SRC bash
+# Load project files
+> aider_add_files(["src/", "pyproject.toml", ".pre-commit-config.yaml"])
+
+# Apply coding standards
+> aider_send_message("Review all Python files and ensure they follow PEP 8, add type hints, and improve docstrings")
+
+# Run quality checks
+> aider_run_command("test")
+#+END_SRC
+
+* 🤝 Contributing
+
+Contributions to improve the Aider MCP Server are welcome! Here's how you can help:
+
+** Development Setup
+
+#+BEGIN_SRC bash
+# Fork and clone the repository
+git clone https://github.com/ricardoamaro/aider-mcp-server.git
+cd aider-mcp-server
+
+# Create a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install development dependencies
+pip install -e .
+pip install pytest pytest-cov black isort mypy
+
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
+#+END_SRC
+
+** Running Tests
+
+#+BEGIN_SRC bash
+# Run the test suite
+pytest
+
+# Run with coverage
+pytest --cov=aider_mcp_server --cov-report=html
+
+# Run specific test categories
+pytest tests/test_process_manager.py
+pytest tests/test_response_handler.py
+#+END_SRC
+
+** Code Quality
+
+#+BEGIN_SRC bash
+# Format code
+black aider_mcp_server/
+isort aider_mcp_server/
+
+# Type checking
+mypy aider_mcp_server/
+
+# Lint
+flake8 aider_mcp_server/
+#+END_SRC
+
+** Contribution Guidelines
+
+1. *Fork the repository* and create a feature branch
+2. *Write tests* for new functionality
+3. *Follow code style* (Black, isort, type hints)
+4. *Update documentation* for new features
+5. *Submit a pull request* with clear description
+
+** Areas for Contribution
+
+- *Enhanced Error Handling*: Improve error messages and recovery
+- *Performance Optimization*: Reduce latency and memory usage
+- *Additional Tools*: New MCP tools for specialized workflows (currently 13 tools available)
+- *Documentation*: Examples, tutorials, and API documentation
+- *Testing*: Expand test coverage and add integration tests
+- *Platform Support*: Windows-specific optimizations
+
+** Reporting Issues
+
+When reporting bugs, please include:
+
+- Python version and operating system
+- Aider version (~aider --version~)
+- MCP client being used
+- Complete error messages and stack traces
+- Minimal reproduction steps
+- Expected vs. actual behavior
+
+* License
+
+This project is licensed under the MIT License.
+
+* 🔗 Related Projects
+
+- *[[https://aider.chat/][Aider]]*: The excellent AI pair programming tool that this server integrates with
+- *[[https://modelcontextprotocol.io/][Model Context Protocol]]*: The protocol specification that enables this integration
+- *[[https://github.com/chrishayuk/mcp-cli][mcp-cli]]*: The powerful MCP client that works seamlessly with this server
+- *[[https://gofastmcp.com][FastMCP]]*: The framework that simplifies MCP server development
+- *[[https://github.com/modelcontextprotocol/servers][MCP Servers]]*: Official MCP server implementations
